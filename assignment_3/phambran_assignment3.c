@@ -4,29 +4,29 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
+#include <dirent.h>
 
 #define MAX_LINE 1024
 #define MAX_FILENAME 256
 
 void create_random_directory(char *dirname) {
     int random_num = rand() % 100000;
-    sprintf(dirname, "phambran.movies.%d", random_num);
-    
-    if (mkdir(dirname, S_IRWXU | S_IRGRP | S_IXGRP) == 0) {
-        printf("Directory created: %s\n", dirname);
-    } else {
-        perror("Failed to create directory");
-        exit(1);
-    }
+    snprintf(dirname, MAX_FILENAME, "phambran.movies.%d", random_num);    
+    mkdir(dirname, S_IRWXU | S_IRGRP | S_IXGRP);
+    printf("Created directory with name %s\n", dirname);
 }
 
-// Function to process the CSV file and create text files per year
-void process_csv(const char *filename, const char *dirname) {
+void process_csv(const char *filename) {
     FILE *file = fopen(filename, "r");
     if (!file) {
-        perror("Error opening CSV file");
-        exit(1);
+        printf("The file %s was not found. Try again.\n", filename);
+        return;
     }
+
+    printf("Now processing the chosen file named %s\n", filename);
+
+    char dirname[MAX_FILENAME];
+    create_random_directory(dirname);
 
     char line[MAX_LINE];
     char title[MAX_LINE];
@@ -35,7 +35,7 @@ void process_csv(const char *filename, const char *dirname) {
     while (fgets(line, sizeof(line), file)) {
         if (sscanf(line, "%[^,],%d", title, &year) == 2) {
             char year_filename[MAX_FILENAME];
-            sprintf(year_filename, "%s/%d.txt", dirname, year);
+            snprintf(year_filename, MAX_FILENAME, "%s/%d.txt", dirname, year);            
             
             FILE *year_file = fopen(year_filename, "a");
             if (!year_file) {
@@ -44,56 +44,86 @@ void process_csv(const char *filename, const char *dirname) {
             }
             fprintf(year_file, "%s\n", title);
             fclose(year_file);
-
-            // Set file permissions to rw-r----- (640)
             chmod(year_filename, S_IRUSR | S_IWUSR | S_IRGRP);
         }
     }
     fclose(file);
 }
 
-int getValidChoice() {
-    char input[10];  // Buffer for user input
-    int choice;
+char* find_file(int find_largest) {
+    DIR *d = opendir(".");
+    struct dirent *dir;
+    struct stat file_stat;
+    char *selected_file = NULL;
+    off_t selected_size = find_largest ? 0 : __INT_MAX__;
 
-    while (1) {
-        printf("Enter a choice 1 or 2: ");
-        if (!fgets(input, sizeof(input), stdin)) {
-            printf("Error reading input.\n");
-            exit(EXIT_FAILURE);
-        }
-
-        // Check if input is a valid integer between 1 and 2
-        if (sscanf(input, "%d", &choice) == 1 && choice >= 1 && choice <= 2) {
-            return choice;
-        }
-
-        printf("You entered an incorrect choice. Try again.\n\n");
+    if (!d) {
+        perror("Error opening directory");
+        exit(1);
     }
+
+    while ((dir = readdir(d)) != NULL) {
+        if (strstr(dir->d_name, ".csv") && strncmp(dir->d_name, "movies_", 7) == 0) {
+            if (stat(dir->d_name, &file_stat) == 0) {
+                if ((find_largest && file_stat.st_size > selected_size) ||
+                    (!find_largest && file_stat.st_size < selected_size)) {
+                    selected_size = file_stat.st_size;
+                    selected_file = strdup(dir->d_name);
+                }
+            }
+        }
+    }
+    closedir(d);
+    return selected_file;
 }
 
-// Main function with menu
 int main(void) {
-
+    srand(time(NULL));
     
-    int choice, year;
-    char language;
+    int choice;
     do {
-        printf("1. Select file to process\n");
+        printf("\n1. Select file to process\n");
         printf("2. Exit the program\n\n");
-        
-        choice = getValidChoice();
-        
+        do {
+            printf("Enter a choice 1 or 2: ");
+            if (scanf("%d", &choice) != 1 || (choice != 1 && choice != 2)) {
+                printf("You entered an incorrect choice. Try again.\n");
+                while (getchar() != '\n'); // Clear input buffer
+            } else {
+                break;
+            }
+        } while (1);
+
         if (choice == 1) {
-            printf("Which file do you want to process?\n");
+            int file_choice;
+            printf("\nWhich file you want to process?\n");
             printf("Enter 1 to pick the largest file\n");
             printf("Enter 2 to pick the smallest file\n");
             printf("Enter 3 to specify the name of a file\n\n");
+            do {
+                printf("Enter a choice from 1 to 3: ");
+                if (scanf("%d", &file_choice) != 1 || file_choice < 1 || file_choice > 3) {
+                    printf("You entered an incorrect choice. Try again.\n");
+                    while (getchar() != '\n'); // Clear input buffer
+                } else {
+                    break;
+                }
+            } while (1);
 
-            printf("Enter");
-        } 
+            char filename[MAX_FILENAME];
+            if (file_choice == 1) {
+                strcpy(filename, find_file(1));
+            } else if (file_choice == 2) {
+                strcpy(filename, find_file(0));
+            } else if (file_choice == 3) {
+                printf("Enter the complete file name: ");
+                scanf("%s", filename);
+            }
+
+            
+            process_csv(filename);
+        }
     } while (choice != 2);
-    
-    // freeMovies(movies);
+
     return EXIT_SUCCESS;
 }
