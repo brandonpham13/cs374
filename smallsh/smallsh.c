@@ -135,3 +135,9 @@ int main() {
     }
     return 0;
 }
+
+/*
+TODO: 6. Executing commands in foreground/background (IN PROGRESS)
+      7. SIGINT & SIGSTP
+      8. rename file
+*/
