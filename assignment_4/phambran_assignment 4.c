@@ -4,11 +4,42 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <signal.h>
 
 #define MAX_INPUT_SIZE 2048
 #define MAX_ARGS 512
 
-int last_status = 0;
+int last_status = 0; // Last foreground process status
+int foreground_only = 0; 
+
+void handle_sigint(int sig_num) {
+    // Parent ignores SIGINT
+    write(STDOUT_FILENO, ": ", 3);
+    fflush(stdout);
+}
+
+void handle_sigtstp(int sig_num) {
+    if (foreground_only) {
+        write(STDOUT_FILENO, "\nExiting foreground-only mode\n", 65);
+    } else {
+        write(STDOUT_FILENO, "\nEntering foreground-only mode (& is now ignored)\n", 50);
+    }
+    write(STDOUT_FILENO, ": ", 2);
+    fflush(stdout);
+}
+
+void check_background_processes() {
+    int status;
+    pid_t pid;
+
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        if (WIFEXITED(status)) {
+            printf("background pid %d is done: exit value %d\n", pid, status);
+        } else if (WIFSIGNALED(status)) {
+            printf("background pid %d is done, terminated by signal %d\n", pid, status);
+        }
+    }
+}
 
 void parse_input(char *input, char **args, char **input_file, char **output_file, int *background) {
     int i = 0;
@@ -72,12 +103,39 @@ void execute_command(char **args, char *input_file, char *output_file, int backg
             printf("terminated by signal %d\n", WTERMSIG(last_status));
         }
     } else {
+        if (foreground_only) {
+            background = 0;
+        }
         // Fork process for external command
         pid_t pid = fork();
         if (pid == 0) {
             
             // Child process
+            signal(SIGTSTP, SIG_IGN);
+            if (background) {
+                signal(SIGINT, SIG_IGN);
+                if (!input_file) {
+                    int fd = open("/dev/null", O_RDONLY);
+                    if (fd == -1) {
+                        perror("open /dev/null for input");
+                        exit(1);
+                    }
+                    dup2(fd, STDIN_FILENO);
+                    close(fd);
+                }
+                if (!output_file) {
+                    int fd = open("/dev/null", O_WRONLY);
+                    if (fd == -1) {
+                        perror("open /dev/null for output");
+                        exit(1);
+                    }
+                    dup2(fd, STDOUT_FILENO);
+                    close(fd);
+                } else {
+                    signal(SIGINT, SIG_DFL); // Foreground process terminates on SIGINT
+                }
 
+            }
             // Input redirection
             if (input_file) {
                 int fd = open(input_file, O_RDONLY);
@@ -108,6 +166,9 @@ void execute_command(char **args, char *input_file, char *output_file, int backg
                 printf("background pid is %d\n", pid);
             } else {
                 waitpid(pid, &last_status, 0);
+                if (WIFSIGNALED(last_status)) {
+                    printf("terminated by signal: %d\n", WTERMSIG(last_status));
+                }
             }
         } else {
             perror("fork failed");
@@ -117,12 +178,16 @@ void execute_command(char **args, char *input_file, char *output_file, int backg
 }
 
 int main() {
+    signal(SIGINT, handle_sigint); // Parent process ignores SIGINT
+    signal(SIGTSTP, handle_sigtstp); // Parent handles SIGTSTP
+
     char input[MAX_INPUT_SIZE];
     char *args[MAX_ARGS];
     char *input_file, *output_file;
     int background;
 
     while (1) {
+        check_background_processes();
         printf(": ");
         fflush(stdout);
         
@@ -135,9 +200,3 @@ int main() {
     }
     return 0;
 }
-
-/*
-TODO: 6. Executing commands in foreground/background (IN PROGRESS)
-      7. SIGINT & SIGSTP
-      8. rename file
-*/
