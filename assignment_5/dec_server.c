@@ -36,11 +36,14 @@ void decrypt_text(char *ciphertext, char *key, char *plaintext) {
 void handle_client(int client_socket) {
     char ciphertext[MAX_BUFFER], key[MAX_BUFFER], plaintext[MAX_BUFFER];
     memset(ciphertext, '\0', MAX_BUFFER);
+    memset(plaintext, '\0', MAX_BUFFER);
     memset(key, '\0', MAX_BUFFER);
 
     recv(client_socket, ciphertext, MAX_BUFFER, 0);
     recv(client_socket, key, MAX_BUFFER, 0);
     decrypt_text(ciphertext, key, plaintext);
+    // printf("%s\n", ciphertext);
+    // printf("%s", plaintext);
     send(client_socket, plaintext, strlen(plaintext), 0);
 
     close(client_socket);
