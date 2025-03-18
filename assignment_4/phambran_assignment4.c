@@ -14,15 +14,17 @@ int foreground_only = 0;
 
 void handle_sigint(int sig_num) {
     // Parent ignores SIGINT
-    write(STDOUT_FILENO, ": ", 3);
-    fflush(stdout);
+    const char msg[] = "\n: ";
+    write(STDOUT_FILENO, msg, strlen(msg));
 }
 
 void handle_sigtstp(int sig_num) {
     if (foreground_only) {
-        write(STDOUT_FILENO, "\nExiting foreground-only mode\n", 65);
+        const char msg[] = "\nExiting foreground-only mode\n";
+        write(STDOUT_FILENO, msg, strlen(msg));
     } else {
-        write(STDOUT_FILENO, "\nEntering foreground-only mode (& is now ignored)\n", 50);
+        const char msg[] = "\nEntering foreground-only mode (& is now ignored)\n";
+        write(STDOUT_FILENO, msg, strlen(msg));
     }
     write(STDOUT_FILENO, ": ", 2);
     fflush(stdout);
@@ -53,7 +55,7 @@ void parse_input(char *input, char **args, char **input_file, char **output_file
         return;
     }
 
-    // Tokenize the input
+    // Tokenize input
     args[i] = strtok(input, " \t\n");
     while (args[i] != NULL) {
         if (strcmp(args[i], "<") == 0) {
@@ -106,13 +108,13 @@ void execute_command(char **args, char *input_file, char *output_file, int backg
         if (foreground_only) {
             background = 0;
         }
+        
         // Fork process for external command
         pid_t pid = fork();
         if (pid == 0) {
-            
             // Child process
             signal(SIGTSTP, SIG_IGN);
-            if (background) {
+            if (background && !foreground_only) {
                 signal(SIGINT, SIG_IGN);
                 if (!input_file) {
                     int fd = open("/dev/null", O_RDONLY);
@@ -140,7 +142,7 @@ void execute_command(char **args, char *input_file, char *output_file, int backg
             if (input_file) {
                 int fd = open(input_file, O_RDONLY);
                 if (fd == -1) {
-                    perror("open input file failed");
+                    perror("cannot open file for input"); // TODO: place file name in output
                     exit(EXIT_FAILURE);
                 }
                 dup2(fd, STDIN_FILENO); 
@@ -158,14 +160,14 @@ void execute_command(char **args, char *input_file, char *output_file, int backg
                 close(fd);
             }
             execvp(args[0], args);
-            perror("execvp"); // If execvp fails, print error
+            perror("execvp"); // TODO: file name here
             exit(1); // Ensure child terminates on failure
         } else if (pid > 0) {
             // Parent process
-            if (background) {
+            if (background && !foreground_only) {
                 printf("background pid is %d\n", pid);
             } else {
-                waitpid(pid, &last_status, 0);
+                while (waitpid(pid, &last_status, 0) > 0);
                 if (WIFSIGNALED(last_status)) {
                     printf("terminated by signal: %d\n", WTERMSIG(last_status));
                 }
@@ -188,7 +190,7 @@ int main() {
 
     while (1) {
         check_background_processes();
-        printf(": ");
+        write(STDOUT_FILENO, ": ", 2);
         fflush(stdout);
         
         if (fgets(input, MAX_INPUT_SIZE, stdin) == NULL) {

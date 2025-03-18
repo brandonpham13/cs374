@@ -55,6 +55,12 @@ int main(int argc, char *argv[]) {
     read_file(argv[1], ciphertext);
     read_file(argv[2], key);
 
+    // Validate key length
+    if (strlen(key) < strlen(ciphertext)) {
+        fprintf(stderr, "ERROR: Key file is shorter than cipher file\n");
+        exit(1);
+    }
+
     send(client_socket, ciphertext, strlen(ciphertext), 0);
     send(client_socket, key, strlen(key), 0);
 

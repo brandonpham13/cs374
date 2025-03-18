@@ -4,8 +4,6 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/wait.h>
-#include <signal.h>
 #include <netinet/in.h>
 
 #define MAX_BUFFER 100000
@@ -23,28 +21,14 @@ void setupAddressStruct(struct sockaddr_in* address, int portNumber) {
     address->sin_addr.s_addr = INADDR_ANY;
 }
 
-void encrypt_text(char *plaintext, char *key, char *ciphertext) {
-    for (size_t i = 0; i < strlen(plaintext); i++) {
-        int p_val = (plaintext[i] == ' ') ? 26 : plaintext[i] - 'A';
+void decrypt_text(char *ciphertext, char *key, char *plaintext) {
+    for (size_t i = 0; i < strlen(ciphertext); i++) {
+        int c_val = (ciphertext[i] == ' ') ? 26 : ciphertext[i] - 'A';
         int k_val = (key[i] == ' ') ? 26 : key[i] - 'A';
-        int c_val = (p_val + k_val) % 27;
-        ciphertext[i] = (c_val == 26) ? ' ' : (char)(c_val + 'A');
+        int p_val = (c_val - k_val + 27) % 27;
+        plaintext[i] = (p_val == 26) ? ' ' : (char)(p_val + 'A');
     }
-    ciphertext[strlen(plaintext)] = '\0';
-}
-
-void handle_client(int client_socket) {
-    char plaintext[MAX_BUFFER], key[MAX_BUFFER], ciphertext[MAX_BUFFER];
-    memset(plaintext, '\0', MAX_BUFFER);
-    memset(key, '\0', MAX_BUFFER);
-
-    recv(client_socket, plaintext, MAX_BUFFER, 0);
-    recv(client_socket, key, MAX_BUFFER, 0);
-    encrypt_text(plaintext, key, ciphertext);
-    send(client_socket, ciphertext, strlen(ciphertext), 0);
-
-    close(client_socket);
-    exit(0);
+    plaintext[strlen(ciphertext)] = '\0';
 }
 
 int main(int argc, char *argv[]) {
@@ -70,19 +54,25 @@ int main(int argc, char *argv[]) {
         error("ERROR on binding");
 
     listen(server_socket, MAX_CONNECTIONS);
-    signal(SIGCHLD, SIG_IGN); // maybe remove?
 
     while (1) {
-        // Reap zombie processes
-        while (waitpid(-1, NULL, WNOHANG) > 0);
-        
         client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_size);
         if (client_socket < 0) error("ERROR on accept");
 
-        if (fork() == 0) {
-            close(server_socket);
-            handle_client(client_socket);
-        }
+        // Send server type to client
+        send(client_socket, "DEC", 4, 0);
+        client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_size);
+        if (client_socket < 0) error("ERROR on accept");
+
+        char ciphertext[MAX_BUFFER], key[MAX_BUFFER], plaintext[MAX_BUFFER];
+        memset(ciphertext, '\0', MAX_BUFFER);
+        memset(key, '\0', MAX_BUFFER);
+
+        recv(client_socket, ciphertext, MAX_BUFFER, 0);
+        recv(client_socket, key, MAX_BUFFER, 0);
+        decrypt_text(ciphertext, key, plaintext);
+        send(client_socket, plaintext, strlen(plaintext), 0);
+
         close(client_socket);
     }
     close(server_socket);

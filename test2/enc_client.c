@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,10 +8,21 @@
 #include <netdb.h>
 
 #define MAX_BUFFER 100000
+#define VALID_CHARS "ABCDEFGHIJKLMNOPQRSTUVWXYZ "
 
 void error(const char *msg) {
     perror(msg);
     exit(1);
+}
+
+// Function to validate input characters
+void validate_chars(const char *buffer, const char *filename) {
+    for (size_t i = 0; i < strlen(buffer); i++) {
+        if (strchr(VALID_CHARS, buffer[i]) == NULL) {
+            fprintf(stderr, "ERROR: Invalid character in file %s\n", filename);
+            exit(1);
+        }
+    }
 }
 
 // Function to read the contents of a file into a buffer
@@ -23,11 +35,13 @@ void read_file(const char *filename, char *buffer) {
     fclose(file);
     // Remove trailing newline if it exists
     buffer[strcspn(buffer, "\n")] = 0;
+    validate_chars(buffer, filename);
 }
+
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
-        fprintf(stderr, "Usage: %s ciphertext_file key_file port\n", argv[0]);
+        fprintf(stderr, "Usage: %s plaintext_file key_file port\n", argv[0]);
         exit(1);
     }
 
@@ -47,21 +61,27 @@ int main(int argc, char *argv[]) {
     if (connect(client_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
         error("ERROR connecting");
 
-    char ciphertext[MAX_BUFFER], key[MAX_BUFFER];
-    memset(ciphertext, '\0', MAX_BUFFER);
+    char plaintext[MAX_BUFFER], key[MAX_BUFFER];
+    memset(plaintext, '\0', MAX_BUFFER);
     memset(key, '\0', MAX_BUFFER);
 
-    // Read ciphertext and key from files
-    read_file(argv[1], ciphertext);
+    // Read plaintext and key from files
+    read_file(argv[1], plaintext);
     read_file(argv[2], key);
 
-    send(client_socket, ciphertext, strlen(ciphertext), 0);
+    // Validate key length
+    if (strlen(key) < strlen(plaintext)) {
+        fprintf(stderr, "ERROR: Key file is shorter than plaintext file\n");
+        exit(1);
+    }
+
+    send(client_socket, plaintext, strlen(plaintext), 0);
     send(client_socket, key, strlen(key), 0);
 
-    char plaintext[MAX_BUFFER];
-    memset(plaintext, '\0', MAX_BUFFER);
-    recv(client_socket, plaintext, MAX_BUFFER, 0);
-    printf("%s\n", plaintext);
+    char ciphertext[MAX_BUFFER];
+    memset(ciphertext, '\0', MAX_BUFFER);
+    recv(client_socket, ciphertext, MAX_BUFFER, 0);
+    printf("%s\n", ciphertext);
     close(client_socket);
     return 0;
 }

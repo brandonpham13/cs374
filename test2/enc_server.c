@@ -4,8 +4,6 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/wait.h>
-#include <signal.h>
 #include <netinet/in.h>
 
 #define MAX_BUFFER 100000
@@ -33,20 +31,6 @@ void encrypt_text(char *plaintext, char *key, char *ciphertext) {
     ciphertext[strlen(plaintext)] = '\0';
 }
 
-void handle_client(int client_socket) {
-    char plaintext[MAX_BUFFER], key[MAX_BUFFER], ciphertext[MAX_BUFFER];
-    memset(plaintext, '\0', MAX_BUFFER);
-    memset(key, '\0', MAX_BUFFER);
-
-    recv(client_socket, plaintext, MAX_BUFFER, 0);
-    recv(client_socket, key, MAX_BUFFER, 0);
-    encrypt_text(plaintext, key, ciphertext);
-    send(client_socket, ciphertext, strlen(ciphertext), 0);
-
-    close(client_socket);
-    exit(0);
-}
-
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Usage: %s port\n", argv[0]);
@@ -60,29 +44,30 @@ int main(int argc, char *argv[]) {
     server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket < 0) error("ERROR opening socket");
 
-    // Allow port reuse
-    int optval = 1;
-    setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
-
     setupAddressStruct(&server_addr, atoi(argv[1]));
 
     if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
         error("ERROR on binding");
 
     listen(server_socket, MAX_CONNECTIONS);
-    signal(SIGCHLD, SIG_IGN); // maybe remove?
+
+    // Allow port reuse
+    int optval = 1;
+    setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
 
     while (1) {
-        // Reap zombie processes
-        while (waitpid(-1, NULL, WNOHANG) > 0);
-        
         client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_size);
         if (client_socket < 0) error("ERROR on accept");
 
-        if (fork() == 0) {
-            close(server_socket);
-            handle_client(client_socket);
-        }
+        char plaintext[MAX_BUFFER], key[MAX_BUFFER], ciphertext[MAX_BUFFER];
+        memset(plaintext, '\0', MAX_BUFFER);
+        memset(key, '\0', MAX_BUFFER);
+
+        recv(client_socket, plaintext, MAX_BUFFER, 0);
+        recv(client_socket, key, MAX_BUFFER, 0);
+        encrypt_text(plaintext, key, ciphertext);
+        send(client_socket, ciphertext, strlen(ciphertext), 0);
+
         close(client_socket);
     }
     close(server_socket);

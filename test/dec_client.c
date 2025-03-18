@@ -47,6 +47,14 @@ int main(int argc, char *argv[]) {
     if (connect(client_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
         error("ERROR connecting");
 
+    // Validate that we are connected to dec_server
+    char serverType[10] = {0};
+    recv(client_socket, serverType, sizeof(serverType) - 1, 0);
+    if (strcmp(serverType, "DEC") != 0) {
+        fprintf(stderr, "ERROR: dec_client cannot connect to a non-dec_server\n");
+        exit(2);
+    }
+
     char ciphertext[MAX_BUFFER], key[MAX_BUFFER];
     memset(ciphertext, '\0', MAX_BUFFER);
     memset(key, '\0', MAX_BUFFER);
@@ -54,6 +62,12 @@ int main(int argc, char *argv[]) {
     // Read ciphertext and key from files
     read_file(argv[1], ciphertext);
     read_file(argv[2], key);
+
+    // Validate key length
+    if (strlen(key) < strlen(ciphertext)) {
+        fprintf(stderr, "ERROR: Key file is shorter than cipher file\n");
+        exit(1);
+    }
 
     send(client_socket, ciphertext, strlen(ciphertext), 0);
     send(client_socket, key, strlen(key), 0);
